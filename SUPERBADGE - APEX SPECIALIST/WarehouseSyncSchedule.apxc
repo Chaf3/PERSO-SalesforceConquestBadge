@@ -1,0 +1,11 @@
+/**
+ * @author Alexandre Chafaux
+ * @date 31/05/2023
+ * @description Classe pour superbadge Apex.
+ **/
+
+ global with sharing class WarehouseSyncSchedule implements Schedulable{
+    global void execute(SchedulableContext ctx){
+        System.enqueueJob(new WarehouseCalloutService());
+    }
+}

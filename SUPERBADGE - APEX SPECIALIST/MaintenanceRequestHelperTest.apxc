@@ -1,0 +1,164 @@
+/**
+ * @author Alexandre Chafaux
+ * @date 31/05/2023
+ * @description Classe pour superbadge Apex - Etape 3
+ **/
+
+@isTest
+public with sharing class MaintenanceRequestHelperTest {
+
+    private static final String STATUS_NEW = 'New';
+    private static final String WORKING = 'Working';
+    private static final String CLOSED = 'Closed';
+    private static final String REPAIR = 'Repair';
+    private static final String REQUEST_ORIGIN = 'Web';
+    private static final String REQUEST_TYPE = 'Routine Maintenance';
+    private static final String REQUEST_SUBJECT = 'Maintenance Testing subject';
+
+    private static Vehicle__c createVehicle() {
+        return new Vehicle__c(Name = 'SuperTruck');
+    }
+
+    private static Product2 createEquip() {
+        return new Product2(
+            Name = 'SuperEquipment',
+            Lifespan_Months__c = 10,
+            Maintenance_Cycle__c = 10,
+            Replacement_Part__c = true
+        );
+    }
+
+    private static Case createMaintenanceRequest(Id vehId, Id equipId) {
+        return new Case(
+            Type = REPAIR,
+            Status = STATUS_NEW,
+            Origin = REQUEST_ORIGIN,
+            Subject = REQUEST_SUBJECT,
+            Equipment__c = equipId,
+            Vehicle__c = vehId
+        );
+    }
+
+    private static Equipment_Maintenance_Item__c createWorkPart(Id equipId, Id reqId) {
+        return new Equipment_Maintenance_Item__c(
+            Equipment__c = equipId,
+            Maintenance_Request__c = reqId
+        );
+    }
+
+    // Positive test case
+    @isTest
+    private static void testMaintenanceRequestPositive() {
+        Vehicle__c vehicle = createVehicle();
+        insert vehicle;
+        Id vehicleId = vehicle.Id;
+
+        Product2 equipment = createEquip();
+        insert equipment;
+        Id equipmentId = equipment.Id;
+
+        Case maintenanceRequest = createMaintenanceRequest(vehicleId, equipmentId);
+        insert maintenanceRequest;
+
+        Equipment_Maintenance_Item__c workPart = createWorkPart(equipmentId, maintenanceRequest.Id);
+        insert workPart;
+
+        Test.startTest();
+        maintenanceRequest.Status = CLOSED;
+        update maintenanceRequest;
+        Test.stopTest();
+
+        Case newRequest = [SELECT Id, Subject, Type, Equipment__c, Date_Reported__c, Vehicle__c, Date_Due__c
+                           FROM Case WHERE Status = :STATUS_NEW];
+
+        Equipment_Maintenance_Item__c sparePart = [SELECT Id FROM Equipment_Maintenance_Item__c
+                                                  WHERE Maintenance_Request__c = :newRequest.Id];
+
+        System.assertNotEquals(null, sparePart);
+        System.assertNotEquals(null, newRequest.Subject);
+        System.assertEquals(REQUEST_TYPE, newRequest.Type);
+        System.assertEquals(equipmentId, newRequest.Equipment__c);
+        System.assertEquals(vehicleId, newRequest.Vehicle__c);
+        System.assertEquals(System.today(), newRequest.Date_Reported__c);
+    }
+
+    // Negative test case
+    @isTest
+    private static void testMaintenanceRequestNegative() {
+        Vehicle__c vehicle = createVehicle();
+        insert vehicle;
+        Id vehicleId = vehicle.Id;
+
+        Product2 equipment = createEquip();
+        insert equipment;
+        Id equipmentId = equipment.Id;
+
+        Case emptyRequest = createMaintenanceRequest(vehicleId, equipmentId);
+        insert emptyRequest;
+
+        Equipment_Maintenance_Item__c workPart = createWorkPart(equipmentId, emptyRequest.Id);
+        insert workPart;
+
+        Test.startTest();
+        emptyRequest.Status = WORKING;
+        update emptyRequest;
+        Test.stopTest();
+
+        Case[] allRequests = [SELECT Id FROM Case];
+
+        Equipment_Maintenance_Item__c workPartResult = [SELECT Id
+                                                        FROM Equipment_Maintenance_Item__c
+                                                        WHERE Maintenance_Request__c = :emptyRequest.Id];
+
+        System.assertNotEquals(null, workPartResult);
+        System.assertEquals(1, allRequests.size());
+    }
+
+    // Bulk test case
+    @isTest
+    private static void testMaintenanceRequestBulk() {
+        Vehicle__c[] vehicleList = new Vehicle__c[]{};
+        Product2[] equipmentList = new Product2 []{};
+        Equipment_Maintenance_Item__c[] workPartList = new Equipment_Maintenance_Item__c[]{};
+        Case[] requestList = new Case[]{};
+        Id[] oldRequestIds = new Id[]{};
+
+        for (Integer i = 0; i < 300; i++) {
+            vehicleList.add(createVehicle());
+            equipmentList.add(createEquip());
+        }
+
+        insert vehicleList;
+        insert equipmentList;
+
+        for (Integer i = 0; i < 300; i++) {
+            requestList.add(createMaintenanceRequest(vehicleList[i].Id, equipmentList[i].Id));
+        }
+
+        insert requestList;
+
+        for (Integer i = 0; i < 300; i++) {
+            workPartList.add(createWorkPart(equipmentList[i].Id, requestList[i].Id));
+        }
+
+        insert workPartList;
+
+        Test.startTest();
+
+        for (Case req : requestList) {
+            req.Status = CLOSED;
+            oldRequestIds.add(req.Id);
+        }
+
+        update requestList;
+        Test.stopTest();
+
+        Case[] allRequests = [SELECT Id FROM Case WHERE Status = :STATUS_NEW];
+
+        Equipment_Maintenance_Item__c[] listOfParts = [SELECT Id
+                                                            FROM Equipment_Maintenance_Item__c
+                                                            WHERE Maintenance_Request__c IN :oldRequestIds];
+
+        System.assertEquals(300, allRequests.size());
+    }
+}

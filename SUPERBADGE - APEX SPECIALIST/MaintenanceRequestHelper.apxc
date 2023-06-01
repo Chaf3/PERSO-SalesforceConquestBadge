@@ -1,0 +1,78 @@
+/**
+ * @author Alexandre Chafaux
+ * @date 31/05/2023
+ * @description Classe pour superbadge Apex - Etape 1
+ **/
+
+public with sharing class MaintenanceRequestHelper {
+    public static void updateworkOrders(Case[] updateWO, Map<Id, Case> nonUpdateCase) {
+        
+        Set<Id> validCaseIds = new Set<Id>();
+        Equipment_Maintenance_Item__c[] clonedEquipMainItems = new Equipment_Maintenance_Item__c[]{};
+        Map<Id, Decimal> caseMaintenance = new Map<Id, Decimal>();
+
+        for (Case tmpCase : updateWO) {
+            Case noUpdateCase = nonUpdateCase.get(tmpCase.Id);
+            if(noUpdateCase.Status != 'Closed' && tmpCase.Status == 'Closed' && (tmpCase.Type == 'Repair' || tmpCase.Type == 'Routine Maintenance')) {
+                validCaseIds.add(tmpCase.Id);
+            }
+        }   
+    
+        //On effectue l'opération uniquement si on a des Maintenance Request (Case)
+        
+        if (validCaseIds.size() > 0) {
+            Case[] newlistCases = new Case[]{};
+            Map<Id, Case> closedCasesMap = new Map<Id, Case>([
+                SELECT Id, Vehicle__c, Equipment__c, Equipment__r.Maintenance_Cycle__c,
+                (SELECT Id, Equipment__c, Quantity__c FROM Equipment_Maintenance_Items__r)
+            FROM Case WHERE Id IN :validCaseIds
+        ]);
+
+         for (AggregateResult ar : [
+            SELECT Maintenance_Request__c, MIN(Equipment__r.Maintenance_Cycle__c) cycle
+            FROM Equipment_Maintenance_Item__c
+            WHERE Maintenance_Request__c IN :validCaseIds
+            GROUP BY Maintenance_Request__c
+        ]) {
+            caseMaintenance.put((Id)ar.get('Maintenance_Request__c'), (Decimal)ar.get('cycle'));
+        }
+        
+        for (Case caseClosed : closedCasesMap.values()) {
+            Case newCase = new Case(
+                ParentId = caseClosed.Id,
+                Status = 'New',
+                Subject = 'Routine Maintenance',
+                Type = 'Routine Maintenance',
+                Vehicle__c = caseClosed.Vehicle__c,
+                Equipment__c = caseClosed.Equipment__c,
+                Origin = 'Web',
+                Date_Reported__c = Date.today()
+            );
+            
+            if (caseMaintenance.containsKey(caseClosed.Id)) {
+                newCase.Date_Due__c = Date.today().addDays(caseMaintenance.get(caseClosed.Id).intValue());
+            }
+            
+            newlistCases.add(newCase);
+        }
+            
+            
+          if(newlistCases.size() > 0 ){
+            insert newlistCases;    
+          }
+
+          for (Case newCase : newlistCases){
+                for (Equipment_Maintenance_Item__c tmpEquipMaintenanceItem : closedCasesMap.get(newCase.ParentId).Equipment_Maintenance_Items__r){
+                    Equipment_Maintenance_Item__c equipMaintenanceItemClone = tmpEquipMaintenanceItem.clone();
+                    equipMaintenanceItemClone.Maintenance_Request__c = newCase.Id;
+                    clonedEquipMainItems.add(equipMaintenanceItemClone);                    
+                }
+            }
+
+            if(clonedEquipMainItems.size() > 0){
+                insert clonedEquipMainItems;        
+            }    
+        
+        }
+    }
+}

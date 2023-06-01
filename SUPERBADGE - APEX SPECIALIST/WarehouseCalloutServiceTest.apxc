@@ -1,0 +1,17 @@
+/**
+ * @author Alexandre Chafaux
+ * @date 31/05/2023
+ * @description Classe pour superbadge Apex - Etape 3
+ **/
+
+@isTest
+private class WarehouseCalloutServiceTest {   
+    @isTest  
+    static void testWareHouseCallout(){
+        Test.startTest();
+        Test.setMock(HTTPCalloutMock.class, new WarehouseCalloutServiceMock());
+        WarehouseCalloutService.runWarehouseEquipmentSync();
+        Test.stopTest();
+        System.assertEquals(1,[SELECT count() FROM Product2]);
+    }     
+}
